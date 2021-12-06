@@ -41,7 +41,7 @@ if __name__ == "__main__":
         isaac.envs.append(env)
 
         # idx = 2
-        idx = i % isaac.obj_names.shape[0]
+        idx = i % len(isaac.obj_names)
 
         obj_scale = isaac.obj_scales[idx]
         obj_path = isaac.obj_paths[idx]
