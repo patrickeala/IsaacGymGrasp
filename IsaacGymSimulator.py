@@ -12,6 +12,7 @@ import time
 
 from scipy.spatial.transform import Rotation as R
 import numpy as np
+import os
 
 
 class IsaacGymSim:
@@ -46,8 +47,8 @@ class IsaacGymSim:
 
 
         # ===== process grasps  =====
-        self.set_paths()
-        self.process_grasps(self.grasp_file)
+        # self.set_paths()
+        # self.process_grasps(self.grasp_file)
 
 
 
@@ -85,12 +86,20 @@ class IsaacGymSim:
             self.obj_asset_root = "../../assets"
             self.test_dir = 'isaac_test_10_meshes'
 
+        elif self.dataset == 'shapenet':
+            # self.obj_path = f"ycb/meshes_10_objects/{self.cat}/google_16k/textured.obj" 
+            self.obj_asset_root = "../../../GRASP/"
+            # self.test_dir = 'isaac_test_10_meshes'
 
-        if self.quality_type == 'None':
-            self.grasp_file = f"{self.test_dir}/{self.cat}.pkl"
+            
+        if self.dataset == 'shapenet':
+            pass
         else:
-            self.grasp_file = f"{self.test_dir}/{self.cat}_{self.quality_type}.pkl"
-
+            if self.quality_type == 'None':
+                self.grasp_file = f"{self.test_dir}/{self.cat}.pkl"
+            else:
+                self.grasp_file = f"{self.test_dir}/{self.cat}_{self.quality_type}.pkl"
+                print("====")
 
     def set_camera_pos(self):
         # point camera at middle env
@@ -145,13 +154,49 @@ class IsaacGymSim:
         self.gripper_idxs = []
 
 
-    def get_object_pose(self, pos=[0,0,1]):
+    def get_object_pose(self,  translation=[0,0,1], quaternion=[0,0,0,1],):
         obj_pose = gymapi.Transform()
-        obj_pose.p.x = pos[0]
-        obj_pose.p.y = pos[1]
-        obj_pose.p.z = pos[2]
+        obj_pose.p.x = translation[0]
+        obj_pose.p.y = translation[1]
+        obj_pose.p.z = translation[2]
+
+        obj_pose.r = gymapi.Quat()
+        obj_pose.r.x = quaternion[0]
+        obj_pose.r.y = quaternion[1]
+        obj_pose.r.z = quaternion[2]
+        obj_pose.r.w = quaternion[3]
         return obj_pose
 
+
+    def get_gripper_pose(self, translation=[0,0,0], quaternion=[0,0,0,1], transform=None):
+
+        # gripper_pose = gymapi.Transform()
+        # gripper_pose.p = gymapi.Vec3(0, 0, 0)
+        # gripper_pose.p.x = -0.01
+        # gripper_pose.p.y = -0.01
+        # # gripper_pose.p.z = self.offset + 0.125
+        # gripper_pose.p.z = self.offset + 0.18
+        # gripper_pose.r = gymapi.Quat.from_euler_zyx(np.pi, 0, 0)
+
+        gripper_pose = gymapi.Transform()
+        gripper_pose.p = gymapi.Vec3(0, 0, 0)
+        gripper_pose.p.x = translation[0] 
+        gripper_pose.p.y = translation[1]
+        gripper_pose.p.z = translation[2]
+
+        gripper_pose.r = gymapi.Quat()
+        gripper_pose.r.x = quaternion[0]
+        gripper_pose.r.y = quaternion[1]
+        gripper_pose.r.z = quaternion[2]
+        gripper_pose.r.w = quaternion[3]
+
+        flipping_rot = gymapi.Quat()
+        flipping_rot.w = np.cos(-np.pi/4)
+        flipping_rot.z = np.sin(-np.pi/4)
+
+        gripper_pose.r = gripper_pose.r * flipping_rot
+
+        return gripper_pose
 
     def print_results(self):
         print(f"\nObj: {self.cat}\nQuality Type: {self.quality_type}\nSuccessful Grasps: {torch.count_nonzero(self.isaac_labels)}/{self.isaac_labels.size()[0]}\nPercentage: {torch.mean(self.isaac_labels).item()*100}%")
@@ -242,6 +287,27 @@ class IsaacGymSim:
             # self.root_tensor[2*i, 2] = 0    
         self.gym.set_actor_root_state_tensor(self.sim,  gymtorch.unwrap_tensor(self.root_tensor))
         self.step_simulation(50)
+
+    def process_shapenet_objects(self, data_dir="shapenet_training_data"):
+        import json
+
+        self.obj_scales = []
+        self.obj_paths = []
+        self.obj_names = []
+        self.obj_ids = []
+        for object in os.listdir(data_dir):
+            print(object)
+            for sample in os.listdir(f'{data_dir}/{object}'):
+                filename = f'{data_dir}/{object}/{sample}'
+                with open(filename) as json_file:
+                    data = json.load(json_file)
+                    # print(filename)
+                    # print(data.keys())
+                    
+                    self.obj_ids.append(data['id'])
+                    self.obj_names.append(data['category'])
+                    self.obj_paths.append(data['path'])
+                    self.obj_scales.append(data['scale'])
 
     def process_grasps(self, file):
         # import pickle
@@ -340,7 +406,7 @@ class IsaacGymSim:
         # print(f"obj_pose_relative: {self.obj_pose_relative}")
         # exit()
 
-    def get_gripper_pose(self, translation, quaternion, transform=None):
+    def get_gripper_pose(self, translation=[0,0,0], quaternion=[0,0,0,1], transform=None):
 
         # gripper_pose = gymapi.Transform()
         # gripper_pose.p = gymapi.Vec3(0, 0, 0)
@@ -608,7 +674,7 @@ class IsaacGymSim:
         obj_asset_options.mesh_normal_mode = gymapi.COMPUTE_PER_FACE
         obj_asset_options.vhacd_enabled = True
         # obj_asset_options.vhacd_enabled = False
-        obj_asset_options.convex_decomposition_from_submeshes = True
+        # obj_asset_options.convex_decomposition_from_submeshes = True
         obj_asset_options.override_com = True
         obj_asset_options.override_inertia = True
         return obj_asset_options
@@ -655,6 +721,8 @@ class IsaacGymSim:
         if self.dataset == 'ycb':
             save_file = f"urdf/{obj_path.rsplit('/', 1)[0]}/temp_{obj_name}.urdf"
         elif self.dataset == 'boxes':
+            save_file = f"{obj_path.rsplit('/', 1)[0]}/temp_{obj_name}.urdf"
+        elif self.dataset == 'shapenet':
             save_file = f"{obj_path.rsplit('/', 1)[0]}/temp_{obj_name}.urdf"
         save_path = f'{asset_dir}/{save_file}'
         urdf_file = open(save_path, 'w')
