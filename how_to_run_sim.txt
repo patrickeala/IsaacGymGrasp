@@ -1,0 +1,2 @@
+python main_isaac.py --dataset=ycb --object=004_sugar_box --quality_type=top1
+python main_isaac.py --dataset=boxes --object=box000 --num_envs=1 --headless=Off

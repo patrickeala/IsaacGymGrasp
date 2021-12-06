@@ -29,6 +29,12 @@ if __name__ == "__main__":
     # isaac.process_grasps(isaac.grasp_file)
     isaac.process_shapenet_objects()
 
+
+    # file
+    # asset
+    # pose
+    # actor
+
     # ===== Creating gripper asset =====
     isaac.gripper_asset = isaac.create_gripper_asset()
 
@@ -46,16 +52,17 @@ if __name__ == "__main__":
         obj_scale = isaac.obj_scales[idx]
         obj_path = isaac.obj_paths[idx]
         obj_name = isaac.obj_names[idx]
-        print(obj_name)
 
 
         # ===== Creating obj asset/actor =====
         obj_trans = [0,0,0]
         obj_quat = R.from_euler('zyx', [0, 90, 0], degrees=True).as_quat()
         isaac.obj_pose = isaac.get_object_pose(obj_trans, obj_quat)
+
         obj_asset_file = isaac.load_as_urdf(obj_name=obj_name, asset_dir=isaac.obj_asset_root,
                                             obj_path=obj_path, texture_obj_path=obj_path,
                                             scale=obj_scale)
+
         obj_asset = isaac.create_obj_asset(isaac.sim, isaac.obj_asset_root,
                                                 obj_asset_file,
                                                 isaac.obj_asset_options())
@@ -80,7 +87,10 @@ if __name__ == "__main__":
 
 
     # ===== executing grasp =====
-    # isaac.step_simulation(50)
+    # isaac.execute_grasp()
+
+
+    isaac.step_simulation(50)
     # isaac.move_gripper_away()
     # isaac.move_obj_to_pos()
     # isaac.move_gripper_to_grasp()

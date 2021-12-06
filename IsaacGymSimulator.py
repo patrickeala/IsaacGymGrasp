@@ -255,17 +255,10 @@ class IsaacGymSim:
         labels = torch.where(finger_vel > vel_threshold, torch.ones(1).to(self.device), torch.zeros(1).to(self.device))
         return labels
 
-    def check_grasp_success_pos(self, gap_threshold = 0.001):
-        # labels = np.zeros(self.num_envs)
-        # if self.dof_pos:
-        #     pass
-
+    def check_grasp_success_pos(self, gap_threshold = 0.0005):
+        # success if the gripper fingers are not close together
         gripper_gap = self.dof_pos[:,2,0] + self.dof_pos[:,3,0]
-        # print(gripper_gap)
-        # labels = torch.where(gripper_gap > gap_threshold, torch.ones(1).to(self.device), torch.zeros(1).to(self.device))
         labels = torch.where(gripper_gap > gap_threshold, 1.0, 0.0)
-        # print(labels)
-        # exit()
 
         return labels
 
