@@ -1,3 +1,6 @@
-isaac_test_10_meshes/
-isaac_test_10_meshes_20grasps/
 __pycache__/
+temp_urdf/
+shapenet_training_data/
+isaac_test_10_meshes_all/
+assets/
+grasp_data_generated/
