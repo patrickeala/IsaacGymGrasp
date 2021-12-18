@@ -369,26 +369,35 @@ class IsaacGymSim:
         self.step_simulation(15)
         self.move_gripper_down()
         self.step_simulation(15)
+        self.move_gripper_up()
+        self.step_simulation(15)
+        self.move_gripper_down()
+        self.step_simulation(15)
+        self.move_gripper_up()
+        self.step_simulation(15)
+        self.move_gripper_down()
+        self.step_simulation(15)
         self.stop_gripper()
         self.step_simulation(15)
 
-    def rotate_gripper(self, angle = 0.5*np.pi/2):
+    def rotate_gripper(self, angle = np.pi/2):
         self.pos_action[:,0] = angle
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
-
-    def y_rotate(self, angle =0.5* np.pi):
-        self.rotate_gripper(angle/4)
-        self.step_simulation(20)
-        self.rotate_gripper(-angle/4)
-        self.step_simulation(20)
-        self.rotate_gripper(angle/4)
-        self.step_simulation(20)
-        self.rotate_gripper(-angle/4)
-        self.step_simulation(20)
+    
+    def y_rotate(self, angle = np.pi):
         self.rotate_gripper(angle/2)
-        self.step_simulation(20)
+        self.step_simulation(100)
+        self.rotate_gripper(-angle/2)
+        self.step_simulation(100)
+        self.rotate_gripper(angle/2)
+        self.step_simulation(100)
+        self.rotate_gripper(-angle/2)
+        self.step_simulation(100)
+        self.rotate_gripper(angle/2)
+        self.step_simulation(100)
         self.stop_gripper()
         self.step_simulation(30)
+
 
     def gripper_shake(self):
         self.z_translate()
@@ -414,7 +423,7 @@ class IsaacGymSim:
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
         self.step_simulation(200)
 
-    def move_gripper_away(self, standoff = 0.8):
+    def move_gripper_away(self, standoff = 0.7):
         self.pos_action[:,1] = -standoff
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
         self.step_simulation(300)

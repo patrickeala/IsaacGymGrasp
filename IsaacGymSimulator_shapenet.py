@@ -413,7 +413,7 @@ class IsaacGymSim:
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
         self.step_simulation(200)
 
-    def move_gripper_away(self, standoff = 0.8):
+    def move_gripper_away(self, standoff = 0.7):
         self.pos_action[:,1] = -standoff
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
         self.step_simulation(200)
