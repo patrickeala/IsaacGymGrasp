@@ -13,22 +13,25 @@ import time
 
 from scipy.spatial.transform import Rotation as R
 import os
-        
+
+import utils
+
 class IsaacGymSim:
-    def __init__(self, args, headless):
+    def __init__(self, args, headless, settings=0):
         self.start_time = time.time()
         # set random seed
         set_seed(1,True)
         torch.set_printoptions(precision=10, sci_mode=False)
 
         # acquire gym interface
+        self.settings = settings
         self.args = args
         self.gym = gymapi.acquire_gym()
         self.device = args.sim_device if args.use_gpu_pipeline else 'cpu'
-        self.num_envs = self.args.num_envs
+        self.num_envs = 0
         self.headless = headless
-        self.quality_type = self.args.quality_type
-        self.compute_device_id = 0 if self.device == "cuda:0" else 1
+        self.compute_device_id = self.device.index
+        self.graphics_device_id =self.device.index
         # print(f" !!!!!!!!isaac gym using device id {self.args.compute_device_id} {type(self.args.graphics_device_id)}")
         # create sim
         self.sim = self.gym.create_sim(self.compute_device_id, self.args.graphics_device_id, self.args.physics_engine, self.get_sim_params())
@@ -44,23 +47,28 @@ class IsaacGymSim:
         self.set_obj_asset_options()
         self.set_gripper_asset_options()
         self.set_object_pose()
+    
+    def init_variables(self, obj_name=None, scale=1, path_to_obj_mesh=None,
+                       quaternions=None, translations=None, obj_pose_relative=None):
 
-    def set_paths(self,cat,obj,grasps_file,results_dir='isaac_test_labels',obj_file=None,is_shapenet=False):
-        # cat -- category of the object, eg "box"
-        # obj -- name of the object, eg "box001"
-        # obj_file -- the name of the object.obj
-        # grasps_file -- the path of the file contains grasps to load
-        # results_dir -- the directory to store the labelled grasps file
-        self.obj = obj
-        self.cat = cat
-        if self.cat not in ["box","cylinder"]:
-            is_shapenet = True
-        if not obj_file:
-            obj_file = f"{obj}.stl" if not is_shapenet else f"{obj}.obj"
-        self.obj_file = obj_file
-        self.obj_path = f"assets/grasp_data/meshes/{self.cat}/{self.obj_file}"
-        self.grasp_file = grasps_file
-        self.results_dir = results_dir
+        assert path_to_obj_mesh is not None,  "Please indicate path to object mesh"
+
+        self.obj_name = obj_name
+        self.scale = scale
+        self.path_to_obj_mesh = path_to_obj_mesh
+
+        self.translations = translations
+        self.quaternions = quaternions
+        self.obj_pose_relative = obj_pose_relative
+        self.isaac_labels = torch.ones(len(self.translations)).to(self.device)
+
+        # set the flag to detect collision before executing the grasps
+        self.detect_collision = True
+
+        if self.num_envs == 0:
+            self.num_envs = len(self.translations)
+        print(f"The number of environments: {self.num_envs}.")
+
 
     def set_camera_pos(self):
         # point camera at middle env
@@ -118,7 +126,7 @@ class IsaacGymSim:
         self.obj_idxs = []
         self.gripper_idxs = []
 
-    def set_object_pose(self,  translation=[0,0,1], quaternion=[0,0,0,1],):
+    def set_object_pose(self,  translation=[0,0,5], quaternion=[0,0,0,1],):
         obj_pose = gymapi.Transform()
         obj_pose.p.x = translation[0]
         obj_pose.p.y = translation[1]
@@ -131,7 +139,6 @@ class IsaacGymSim:
         obj_pose.r.w = quaternion[3]
         self.obj_pos = obj_pose
         return obj_pose
-
 
     def get_gripper_pose(self, translation=[0,0,0], quaternion=[0,0,0,1], transform=None):
         gripper_pose = gymapi.Transform()
@@ -152,13 +159,7 @@ class IsaacGymSim:
 
         gripper_pose.r = gripper_pose.r * flipping_rot
 
-        return gripper_pose
-
-    def print_results(self):
-        # if self.debug_mode:
-        #     print("the imdex of successful grasps: ", np.where(np.array(self.data['qualities_1'])== 0)[0][np.where(torch.Tensor.cpu(self.isaac_labels)==1)[0]])
-        print(f"\nObj: {self.cat}\nQuality Type: {self.quality_type}\nSuccessful Grasps: {torch.count_nonzero(self.isaac_labels)}/{self.isaac_labels.size()[0]}\nPercentage: {torch.mean(self.isaac_labels).item()*100}%")
-        print("--- %s seconds ---" % (time.time() - self.start_time))
+        return gripper_pos
 
     def execute_grasp(self):
         self.step_simulation(10)
@@ -173,33 +174,6 @@ class IsaacGymSim:
         self.gripper_shake()
         self.step_simulation(50)
 
-
-    def save_isaac_labels(self, filename=None, checker_mode=False):
-        import pickle
-        import os
-        file_dir = f'{self.results_dir}'
-        if not os.path.exists(file_dir):
-           os.makedirs(file_dir)
-        # if checker_mode:
-        #     index_to_modify = self.index_of_grasps[np.where( np.array(self.isaac_labels.cpu())== 0)[0]]
-        #     print("checker mode up and the index to redefine: ", index_to_modify)
-        #     self.data['isaac_labels'][index_to_modify] = 0
-        # else:
-        #     self.data['isaac_labels'] = np.array(self.isaac_labels.cpu())
-        if not filename:
-            filename = self.grasp_file.split("/")[-1]
-            labelled_file_name = f"{file_dir}/{filename}"
-        else:
-            labelled_file_name = f"{file_dir}/{filename}"
-        # self.data.pop('transforms', None)
-        import numpy
-        np.savez_compressed(labelled_file_name,
-                            quaternions=self.quaternions,
-                            translations=self.translations,
-                            isaac_labels=self.isaac_labels.cpu(),
-                            obj_pose_relative=self.obj_pose_relative)
-        # with open(filename, 'wb') as handle:
-        #     pickle.dump(self.data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
     def check_grasp_success_pos(self, gap_threshold = 0.0005):
@@ -228,37 +202,8 @@ class IsaacGymSim:
             self.root_tensor[2*i, 2] = -self.obj_pose_relative[2]
         self.gym.set_actor_root_state_tensor(self.sim,  gymtorch.unwrap_tensor(self.root_tensor))
         self.step_simulation(50)
-
-    def load_grasp_data(self, filename, filter_candidates = True):
-        self.data = np.load(filename)
-        self.transforms = self.data['transforms']
-        self.translations = self.data['translations']
-        self.quaternions = self.data['quaternions']
-        self.obj_pose_relative = np.array(self.data['obj_pose_relative'])
-
-        if filter_candidates:
-            idx = np.where(self.data['is_promising'] == 1)[0]
-            #print(idx)
-            self.transforms = self.data['transforms'][idx]
-            self.translations = self.data['translations'][idx]
-            self.quaternions = self.data['quaternions'][idx]
-            #print(self.translations)
-
-    def init_grasp_data(self, path_to_grasp_data_from_grasper=None,
-                       path_to_json=None):
-        from utils import get_scale
-
-        self.load_grasp_data(path_to_grasp_data_from_grasper)
-        self.scale = get_scale(path_to_json)
  
-        self.isaac_labels = torch.ones(len(self.translations)).to(self.device)
-
-        # set the flag to detect collision before executing the grasps
-        self.detect_collision = True
-
-        if self.num_envs == 0:
-            self.num_envs = len(self.translations)
-        print(f"The number of environments: {self.num_envs}.")
+        
 
     def detect_collision_during_approaching(self):
         if self.detect_collision:
@@ -316,17 +261,23 @@ class IsaacGymSim:
         self.gripper_idxs.append(gripper_idx)
 
     def create_obj_actor(self, env, i, filter = 0):
-        self.obj_handle = self.gym.create_actor(env, self.obj_asset,self.obj_pos, self.obj , i, filter) # i means the collision group that the actor belongs to. 3 means bitwise filter for elements in the same collisionGroup to mask off collision
+        self.obj_handle = self.gym.create_actor(env, self.obj_asset,self.obj_pos, "random_obj", i, filter) # i means the collision group that the actor belongs to. 3 means bitwise filter for elements in the same collisionGroup to mask off collision
         # get global index of box in rigid body state tensor
         obj_idx = self.gym.get_actor_rigid_body_index(env, self.obj_handle, 0, gymapi.DOMAIN_SIM)
         self.obj_idxs.append(obj_idx)
 
     def move_gripper_up(self, up = 0.1):
-        self.pos_action[:,1] = -up
+        if self.settings == 0:
+            self.pos_action[:,1] = -up
+        elif self.settings == 1:
+            self.pos_action[:,1] = -up/2
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
 
     def move_gripper_down(self, down = 0.1):
-        self.pos_action[:,1] = down
+        if self.settings == 0:
+            self.pos_action[:,1] = -down
+        elif self.settings == 1:
+            self.pos_action[:,1] = -down/2
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
 
     def stop_gripper(self):
@@ -335,36 +286,48 @@ class IsaacGymSim:
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
     
     def z_translate(self):
-        self.move_gripper_up()
-        self.step_simulation(15)
-        self.move_gripper_down()
-        self.step_simulation(15)
-        self.move_gripper_up()
-        self.step_simulation(15)
-        self.move_gripper_down()
-        self.step_simulation(15)
-        self.move_gripper_up()
-        self.step_simulation(15)
-        self.move_gripper_down()
-        self.step_simulation(15)
-        self.stop_gripper()
-        self.step_simulation(15)
+        if self.settings == 0:
+            self.move_gripper_up()
+            self.step_simulation(15)
+            self.move_gripper_down()
+            self.step_simulation(15)
+            self.move_gripper_up()
+            self.step_simulation(15)
+            self.move_gripper_down()
+            self.step_simulation(15)
+            self.move_gripper_up()
+            self.step_simulation(15)
+            self.move_gripper_down()
+            self.step_simulation(15)
+            self.stop_gripper()
+            self.step_simulation(15)
+        elif self.settings == 1:
+            self.move_gripper_up()
+            self.step_simulation(15)
+            self.move_gripper_down()
+            self.step_simulation(15)
+            self.stop_gripper()
+            self.step_simulation(15)
 
     def rotate_gripper(self, angle = np.pi/2):
         self.pos_action[:,0] = angle
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
 
     def y_rotate(self, angle =2* np.pi):
+        _ss = 20
+        if self.settings == 1:
+            _ss = 20
+            angle /= 2
         self.rotate_gripper(angle/2)
-        self.step_simulation(100)
+        self.step_simulation(_ss)
         self.rotate_gripper(-angle/2)
-        self.step_simulation(100)
+        self.step_simulation(_ss)
         self.rotate_gripper(angle/2)
-        self.step_simulation(100)
+        self.step_simulation(_ss)
         self.rotate_gripper(-angle/2)
-        self.step_simulation(100)
+        self.step_simulation(_ss)
         self.rotate_gripper(angle/2)
-        self.step_simulation(100)
+        self.step_simulation(_ss)
         self.stop_gripper()
         self.step_simulation(30)
 
@@ -392,10 +355,10 @@ class IsaacGymSim:
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
         self.step_simulation(200)
 
-    def move_gripper_away(self, standoff = 0.25):
+    def move_gripper_away(self, standoff = 0.5):
         self.pos_action[:,1] = -standoff
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
-        self.step_simulation(100)
+        self.step_simulation(200)
 
     def move_gripper_to_grasp(self):
         self.pos_action[:,1] = 0
@@ -403,13 +366,13 @@ class IsaacGymSim:
         self.step_simulation(200)
 
 
-    def create_gripper_asset(self, assets_dir='/home/user/isaac/assets/urdf/panda_hand', franka_asset_file = "panda_hand.urdf"):
+    def create_gripper_asset(self, assets_dir='assets/urdf/panda_hand', franka_asset_file = "panda_hand.urdf"):
         self.gripper_asset = self.gym.load_asset(self.sim, assets_dir, franka_asset_file, self.gripper_asset_options)
         return self.gripper_asset
 
     def create_obj_asset(self,obj_name=None):
         asset_dir = 'temp_urdf'
-        obj_urdf_file = self.load_as_urdf(obj_name=None)
+        obj_urdf_file = utils.load_as_urdf(obj_name=self.obj_name, scale=self.scale, obj_path=self.path_to_obj_mesh)
         obj_asset_options = self.obj_asset_options
         self.obj_asset = self.gym.load_asset(self.sim, asset_dir, obj_urdf_file, obj_asset_options)
         return self.obj_asset
@@ -451,19 +414,35 @@ class IsaacGymSim:
             self.dof_vel = self.dof_states[:, 1].view(self.num_envs, -1, 1)
 
     def set_obj_asset_options(self):
-        obj_asset_options = gymapi.AssetOptions()
-        obj_asset_options.disable_gravity = True
-        obj_asset_options.mesh_normal_mode = gymapi.COMPUTE_PER_VERTEX
-        obj_asset_options.vhacd_enabled = True
-        # obj_asset_options.convex_decomposition_from_submeshes = True
-        obj_asset_options.vhacd_params = gymapi.VhacdParams()
-        obj_asset_options.vhacd_params.resolution = 1000000
-        # obj_asset_options.convex_decomposition_from_submeshes = True
-        obj_asset_options.override_com = True
-        obj_asset_options.override_inertia = True
-        # obj_asset_options.use_mesh_materials = True
-        self.obj_asset_options = obj_asset_options
-        return obj_asset_options
+
+        if self.settings == 0: # box, cylinder
+            obj_asset_options = gymapi.AssetOptions()
+            obj_asset_options.disable_gravity = True
+            obj_asset_options.mesh_normal_mode = gymapi.COMPUTE_PER_VERTEX
+            obj_asset_options.vhacd_enabled = False
+            # obj_asset_options.convex_decomposition_from_submeshes = True
+            # obj_asset_options.vhacd_params = gymapi.VhacdParams()
+            # obj_asset_options.vhacd_params.resolution = 1000000
+            # obj_asset_options.convex_decomposition_from_submeshes = True
+            obj_asset_options.override_com = True
+            obj_asset_options.override_inertia = True
+            # obj_asset_options.use_mesh_materials = True
+            self.obj_asset_options = obj_asset_options
+            return obj_asset_options
+        elif self.settings == 1:
+            obj_asset_options = gymapi.AssetOptions()
+            obj_asset_options.disable_gravity = True
+            obj_asset_options.mesh_normal_mode = gymapi.COMPUTE_PER_VERTEX
+            obj_asset_options.vhacd_enabled = True
+            # obj_asset_options.convex_decomposition_from_submeshes = True
+            obj_asset_options.vhacd_params = gymapi.VhacdParams()
+            obj_asset_options.vhacd_params.resolution = 1000000
+            # obj_asset_options.convex_decomposition_from_submeshes = True
+            obj_asset_options.override_com = True
+            obj_asset_options.override_inertia = True
+            # obj_asset_options.use_mesh_materials = True
+            self.obj_asset_options = obj_asset_options
+            return obj_asset_options
 
     def set_gripper_asset_options(self):
         gripper_asset_options = gymapi.AssetOptions()
@@ -473,48 +452,6 @@ class IsaacGymSim:
         gripper_asset_options.flip_visual_attachments = False
         self.gripper_asset_options = gripper_asset_options
         return gripper_asset_options
-
-    def load_as_urdf(self, obj_name=None, asset_dir=None, obj_path=None, texture_obj_path=None, mass=3, scale=None):
-        # TODO
-        if not scale:
-            scale = self.scale
-        if not obj_path:
-            obj_path = self.obj_path
-        if not texture_obj_path:
-            texture_obj_path = obj_path
-        if not obj_name:
-            obj_name = self.obj
-        print("---------------------------")
-        print("scaling the object with :", scale)
-        print("---------------------------")
-        urdf_txt = f"""<?xml version="1.0"?>
-<robot name="{obj_name}">
-  <link name="{obj_name}">
-    <visual>
-      <origin xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <mesh filename="{texture_obj_path}" scale="{scale} {scale} {scale}"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <mesh filename="{obj_path}" scale="{scale} {scale} {scale}"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="{mass}"/>
-      <inertia ixx="0.0000" ixy="0.0" ixz="0.0" iyy="0.000" iyz="0.0" izz="0.0000"/>
-    </inertial>
-  </link>
-</robot>
-    """
-        save_file = f'{obj_name}.urdf'
-        save_path = f'temp_urdf/{save_file}'
-        urdf_file = open(save_path, 'w')
-        urdf_file.write(urdf_txt)
-
-        return save_file
 
     def get_sim_params(self):
         # configure sim

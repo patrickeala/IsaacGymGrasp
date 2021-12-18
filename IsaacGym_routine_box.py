@@ -1,4 +1,4 @@
-import IsaacGymSimulator_box as isaac_sim
+import IsaacGymSimulator_normal as isaac_sim
 import pickle5 as pickle
 from isaacgym import gymapi
 from isaacgym import gymutil
@@ -77,7 +77,7 @@ def get_local_grasps_filenames(labelled_data_path,num_of_trial):
     local_grasps_filenames = []
 
     import numpy as np
-    main_data = np.load(f"{labelled_data_path}/main1.npz")
+    main_data = np.load(f"{labelled_data_path}/main{num_of_trial}.npz")
     
     indecies_of_local_grasps = np.where(np.array(main_data["isaac_labels"])==1)[0]
 
@@ -99,13 +99,13 @@ def get_label_for_object(category,object,num_of_trial,device="cuda:0",headless="
 
     get_label_for_file(category,object,f"main{num_of_trial}.npz",device=device,headless=headless)
 
-    local_grasps_filenames = get_local_grasps_filenames(labelled_data_path,num_of_trial)
-    for local_grasps_filename in local_grasps_filenames:
-        get_label_for_file(category,object,local_grasps_filename,device=device,headless=headless)
+    # local_grasps_filenames = get_local_grasps_filenames(labelled_data_path,num_of_trial)
+    # for local_grasps_filename in local_grasps_filenames:
+    #     get_label_for_file(category,object,local_grasps_filename,device=device,headless=headless)
     
-    print(f"done with labelling object {object}")
+    # print(f"done with labelling object {object}")
 
 if __name__ == "__main__":
     category = "box"
-    for i in range(20):
-        get_label_for_object(category=category,object=f"box{i:03}",num_of_trial=1,device="cuda:1",headless=False)
+    for i in range(16,17,1):
+        get_label_for_object(category=category,object=f"{category}{i:03}",num_of_trial=2,device="cuda:0",headless=True)

@@ -60,7 +60,7 @@ class IsaacGymSim:
         if not obj_file:
             obj_file = f"{obj}.stl" if not is_shapenet else f"{obj}.obj"
         self.obj_file = obj_file
-        self.obj_path = f"/home/user/isaac/assets/grasp_data/meshes/{self.cat}/{self.obj_file}"
+        self.obj_path = f"../../grasp_data/meshes/{self.cat}/{self.obj_file}"
         self.grasp_file = grasps_file
         self.results_dir = results_dir
 
@@ -250,7 +250,7 @@ class IsaacGymSim:
             file = self.grasp_file
         self.data = np.load(file)
 
-        info_file = f"/home/user/isaac/assets/grasp_data/info/{self.cat}/{self.obj}.json"
+        info_file = f"../../grasp_data/info/{self.cat}/{self.obj}.json"
         # print("info_file: ",info_file)
         with open(info_file) as json_file:
             self.info = json.load(json_file)
@@ -434,12 +434,12 @@ class IsaacGymSim:
         self.step_simulation(300)
 
 
-    def create_gripper_asset(self, assets_dir='/home/user/isaac/assets/urdf/panda_hand', franka_asset_file = "panda_hand.urdf"):
+    def create_gripper_asset(self, assets_dir='/home/crslab/GRASP/IsaacGymGrasp/assets/urdf/panda_hand', franka_asset_file = "panda_hand.urdf"):
         self.gripper_asset = self.gym.load_asset(self.sim, assets_dir, franka_asset_file, self.gripper_asset_options)
         return self.gripper_asset
 
     def create_obj_asset(self,obj_name=None):
-        asset_dir = '/home/user/isaac/temp_urdf'
+        asset_dir = "/home/crslab/GRASP/IsaacGymGrasp/temp_urdf"
         obj_urdf_file = self.load_as_urdf(obj_name=None)
         obj_asset_options = self.obj_asset_options
         self.obj_asset = self.gym.load_asset(self.sim, asset_dir, obj_urdf_file, obj_asset_options)
@@ -540,7 +540,7 @@ class IsaacGymSim:
 </robot>
     """
         save_file = f'{obj_name}.urdf'
-        save_path = f'/home/user/isaac/temp_urdf/{save_file}'
+        save_path = f'/home/crslab/GRASP/IsaacGymGrasp/temp_urdf/{save_file}'
         urdf_file = open(save_path, 'w')
         urdf_file.write(urdf_txt)
 
