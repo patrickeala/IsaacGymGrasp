@@ -68,9 +68,9 @@ def simulate_isaac(quaternions, translations, obj_pose_relative,
 
 if __name__ == "__main__":
 
-    cat ="bowl" 
-    idx = 12
-    trial = 3
+    cat ="box" 
+    idx = 1
+    trial = 1
     headless = False
 
 
@@ -85,10 +85,6 @@ if __name__ == "__main__":
     # trial = args.trial
 
   
-    cat ="bowl" 
-    trial = 3
-    idx = 17
-    headless = False
         
     obj_name = f'{cat}{idx:03}'
     
