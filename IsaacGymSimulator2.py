@@ -17,24 +17,24 @@ import os
 import utils
 
 class IsaacGymSim:
-    def __init__(self, args, headless, settings=0):
+    def __init__(self, args, headless):
         self.start_time = time.time()
         # set random seed
         set_seed(1,True)
         torch.set_printoptions(precision=10, sci_mode=False)
 
         # acquire gym interface
-        self.settings = settings
+        self.settings = args.settings
         self.args = args
         self.gym = gymapi.acquire_gym()
-        self.device = args.sim_device if args.use_gpu_pipeline else 'cpu'
+        self.device = args.sim_device
         self.num_envs = 0
         self.headless = headless
         self.compute_device_id = self.device.index
-        self.graphics_device_id =self.device.index
+        self.graphics_device_id = 0 #self.device.index
         # print(f" !!!!!!!!isaac gym using device id {self.args.compute_device_id} {type(self.args.graphics_device_id)}")
         # create sim
-        self.sim = self.gym.create_sim(self.compute_device_id, self.args.graphics_device_id, self.args.physics_engine, self.get_sim_params())
+        self.sim = self.gym.create_sim(self.compute_device_id, self.graphics_device_id, self.args.physics_engine, self.get_sim_params())
         if self.sim is None:
             raise Exception("Failed to create sim")
 
@@ -48,6 +48,9 @@ class IsaacGymSim:
         self.set_gripper_asset_options()
         self.set_object_pose()
     
+        # disable gradients
+        torch.set_grad_enabled(False)
+        
     def init_variables(self, obj_name=None, scale=1, path_to_obj_mesh=None,
                        quaternions=None, translations=None, obj_pose_relative=None):
 
@@ -126,7 +129,7 @@ class IsaacGymSim:
         self.obj_idxs = []
         self.gripper_idxs = []
 
-    def set_object_pose(self,  translation=[0,0,5], quaternion=[0,0,0,1],):
+    def set_object_pose(self,  translation=[0,0,3], quaternion=[0,0,0,1],):
         obj_pose = gymapi.Transform()
         obj_pose.p.x = translation[0]
         obj_pose.p.y = translation[1]
@@ -194,8 +197,6 @@ class IsaacGymSim:
         self.root_angvels = self.root_tensor[:, 10:13]
 
     def move_obj_to_pos(self, x=0,y=0,z=0):
-        print("---------------")
-        print(f"moving obj to {-self.obj_pose_relative[0],-self.obj_pose_relative[1],-self.obj_pose_relative[2]}")
         for i in range(self.num_envs):
             self.root_tensor[2*i, 0] = -self.obj_pose_relative[0]
             self.root_tensor[2*i, 1] = -self.obj_pose_relative[1]
@@ -381,6 +382,8 @@ class IsaacGymSim:
         if self.headless == False:
             self.gym.destroy_viewer(self.viewer)
         self.gym.destroy_sim(self.sim)
+        self.translations = None
+        self.quaternions = None
 
     def step_simulation(self, num_steps=1000):
         for _ in range(num_steps):
@@ -414,7 +417,7 @@ class IsaacGymSim:
             self.dof_vel = self.dof_states[:, 1].view(self.num_envs, -1, 1)
 
     def set_obj_asset_options(self):
-
+        print(f'ARGS Settings: {self.args.settings}')
         if self.settings == 0: # box, cylinder
             obj_asset_options = gymapi.AssetOptions()
             obj_asset_options.disable_gravity = True
@@ -471,6 +474,7 @@ class IsaacGymSim:
             self.sim_params.physx.friction_correlation_distance = 0.0005
             self.sim_params.physx.num_threads = self.args.num_threads
             self.sim_params.physx.use_gpu = self.args.use_gpu
+            # self.sim_params.physx.max_gpu_contact_pairs = 1048576 * 2 # 1110999
         else:
             raise Exception("This example can only be used with PhysX")
         return self.sim_params

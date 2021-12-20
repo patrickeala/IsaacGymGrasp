@@ -5,3 +5,5 @@ isaac_test_10_meshes_all/
 assets/
 grasp_data_generated_backup/
 grasp_data_generated/
+temp/
+backup/
