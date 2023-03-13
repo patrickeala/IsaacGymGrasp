@@ -3,7 +3,7 @@ import numpy as np
 from numpy.core.numeric import argwhere
 import utils
 import time
-from IsaacGymSimulator2 import IsaacGymSim
+from IsaacGymSimulator3 import IsaacGymSim
 from isaacgym import gymutil
 from isaacgym.torch_utils import *
 import gc    
@@ -68,9 +68,9 @@ def simulate_isaac(quaternions, translations, obj_pose_relative,
 
 if __name__ == "__main__":
 
-    cat ="box" 
-    idx = 1
-    trial = 1
+    cat ="bowl" 
+    idx = 4
+    trial = 2
     headless = False
 
 

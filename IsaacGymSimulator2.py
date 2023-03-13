@@ -31,8 +31,8 @@ class IsaacGymSim:
         self.num_envs = 0
         self.headless = headless
         self.compute_device_id = self.device.index
-        self.graphics_device_id = 0 #self.device.index
-        # print(f" !!!!!!!!isaac gym using device id {self.args.compute_device_id} {type(self.args.graphics_device_id)}")
+        self.graphics_device_id = self.device.index
+
         # create sim
         self.sim = self.gym.create_sim(self.compute_device_id, self.graphics_device_id, self.args.physics_engine, self.get_sim_params())
         if self.sim is None:
@@ -50,9 +50,11 @@ class IsaacGymSim:
     
         # disable gradients
         torch.set_grad_enabled(False)
-        
+
+     
+
     def init_variables(self, obj_name=None, scale=1, path_to_obj_mesh=None,
-                       quaternions=None, translations=None, obj_pose_relative=None):
+                       quaternions=None, translations=None, obj_pose_relative=None, grasps_distances=None):
 
         assert path_to_obj_mesh is not None,  "Please indicate path to object mesh"
 
@@ -64,6 +66,7 @@ class IsaacGymSim:
         self.quaternions = quaternions
         self.obj_pose_relative = obj_pose_relative
         self.isaac_labels = torch.ones(len(self.translations)).to(self.device)
+        self.grasps_distances = grasps_distances
 
         # set the flag to detect collision before executing the grasps
         self.detect_collision = True
@@ -87,9 +90,7 @@ class IsaacGymSim:
         self.env_lower = gymapi.Vec3(-self.spacing, -self.spacing, 0.0)
         self.env_upper = gymapi.Vec3(self.spacing, self.spacing, self.spacing)
 
-
         print("Creating %d environments" % num_envs)
-
 
         # ===== add ground plane  =====
         self.add_ground_plane()
@@ -110,15 +111,16 @@ class IsaacGymSim:
         self.dof_pos = self.dof_states[:, 0].view(self.num_envs, -1, 1)
         self.dof_vel = self.dof_states[:, 1].view(self.num_envs, -1, 1)
 
+        # get obj state tensor
+        self.obj_pos = self.rb_states[self.obj_idxs, :3]
+        self.obj_rot = self.rb_states[self.obj_idxs, 3:7]
+        self.obj_vel = self.rb_states[self.obj_idxs, 7:]
         #Set action tensors
         self.pos_action = torch.zeros_like(self.dof_pos).squeeze(-1)
         self.pos_action[:,-2:] = 0.04
         self.effort_action = torch.zeros_like(self.pos_action)
 
-        # get contact force tensor 
-        _net_contact_forces = self.gym.acquire_net_contact_force_tensor(self.sim)
-        self.net_contact_forces =  gymtorch.wrap_tensor(_net_contact_forces).view(self.num_envs, -1)
-
+        
     def add_ground_plane(self, z=-1):
         plane_params = gymapi.PlaneParams()
         plane_params.normal = gymapi.Vec3(0,0,1)
@@ -155,6 +157,7 @@ class IsaacGymSim:
         gripper_pose.r.y = quaternion[1]
         gripper_pose.r.z = quaternion[2]
         gripper_pose.r.w = quaternion[3]
+
         # rotate the gripper around z axis for 90 degree
         flipping_rot = gymapi.Quat()
         flipping_rot.w = np.cos(-np.pi/4)
@@ -162,7 +165,7 @@ class IsaacGymSim:
 
         gripper_pose.r = gripper_pose.r * flipping_rot
 
-        return gripper_pos
+        return gripper_pose
 
     def execute_grasp(self):
         self.step_simulation(10)
@@ -171,21 +174,22 @@ class IsaacGymSim:
         self.move_obj_to_pos()
         self.step_simulation(20)
         self.move_gripper_to_grasp()
-        self.step_simulation(10)
-        self.close_gripper()
+        self.step_simulation(20)
         self.close_gripper_effort()
         self.gripper_shake()
         self.step_simulation(50)
 
 
 
-    def check_grasp_success_pos(self, gap_threshold = 0.0005):
+    def check_grasp_success_pos(self, gap_threshold = 0.0053):
+
         # success if the gripper fingers are not close together
         gripper_gap = self.dof_pos[:,2,0] + self.dof_pos[:,3,0]
-        labels = torch.where(gripper_gap > gap_threshold, 1.0, 0.0) 
-        # print("labels of grasps holding the object in the end: ", labels)
-        # print("labels of grasps without collision during approaching: ", self.isaac_labels)
+        print(f'collision labels:{torch.sum(self.isaac_labels)}')
+        labels = torch.where(gripper_gap > gap_threshold, 1.0, 0.0)
+        print(f'stable labels:{torch.sum(labels)}')
         self.isaac_labels = self.isaac_labels * labels
+        print(f'final labels:{torch.sum(self.isaac_labels)}')
         return self.isaac_labels
 
     def get_root_tensor(self):
@@ -198,9 +202,13 @@ class IsaacGymSim:
 
     def move_obj_to_pos(self, x=0,y=0,z=0):
         for i in range(self.num_envs):
+            #print('before')
+            #print(self.root_tensor[2*i, :3])
             self.root_tensor[2*i, 0] = -self.obj_pose_relative[0]
             self.root_tensor[2*i, 1] = -self.obj_pose_relative[1]
             self.root_tensor[2*i, 2] = -self.obj_pose_relative[2]
+            #print('after')
+            #print(self.root_tensor[2*i, :3])
         self.gym.set_actor_root_state_tensor(self.sim,  gymtorch.unwrap_tensor(self.root_tensor))
         self.step_simulation(50)
  
@@ -208,9 +216,10 @@ class IsaacGymSim:
 
     def detect_collision_during_approaching(self):
         if self.detect_collision:
-            index_of_env_in_collision = torch.where((self.net_contact_forces.any(dim = 1)))
+            index_of_env_in_collision = torch.where((self.obj_vel.any(dim = 1)))
             self.isaac_labels[index_of_env_in_collision] = 0
         return
+
 
     def get_gripper_pose(self, translation=[0,0,0], quaternion=[0,0,0,1], transform=None):
 
@@ -236,10 +245,16 @@ class IsaacGymSim:
 
         franka_dof_props = self.gym.get_asset_dof_properties(self.gripper_asset)
         franka_upper_limits = franka_dof_props["upper"]
-        franka_dof_props["driveMode"][:].fill(gymapi.DOF_MODE_POS)
-        franka_dof_props["stiffness"][:].fill(800.0)
-        franka_dof_props["damping"][:].fill(40.0)
+        # print(self.gym.get_asset_dof_name(self.gripper_asset,2))
+        franka_dof_props["driveMode"][:2].fill(gymapi.DOF_MODE_POS)
+        franka_dof_props["stiffness"][:2].fill(400.0)
+        franka_dof_props["damping"][:2].fill(40.0)
 
+        # set gripper driver mode as effort control
+        franka_dof_props["driveMode"][2:].fill(gymapi.DOF_MODE_EFFORT)
+        #franka_dof_props["driveMode"][2:].fill(gymapi.DOF_MODE_POS)
+        franka_dof_props["stiffness"][2:].fill(5.0)
+        franka_dof_props["damping"][2:].fill(100.0)
         # default dof states and position targets
         franka_num_dofs = self.gym.get_asset_dof_count(self.gripper_asset)
         default_dof_pos = np.zeros(franka_num_dofs, dtype=np.float32) # initializing the joints degrees
@@ -247,7 +262,7 @@ class IsaacGymSim:
         default_dof_pos[-2:] = franka_upper_limits[-2:]
         default_dof_state = np.zeros(franka_num_dofs, gymapi.DofState.dtype)
         default_dof_state["pos"] = default_dof_pos
-        self.gripper_handle = self.gym.create_actor(env,self.gripper_asset, pose, name, i, filter)
+        self.gripper_handle = self.gym.create_actor(env,self.gripper_asset, pose, f'{name}_{i}', i, filter)
 
         # set dof properties
         self.gym.set_actor_dof_properties(env, self.gripper_handle, franka_dof_props)
@@ -262,7 +277,7 @@ class IsaacGymSim:
         self.gripper_idxs.append(gripper_idx)
 
     def create_obj_actor(self, env, i, filter = 0):
-        self.obj_handle = self.gym.create_actor(env, self.obj_asset,self.obj_pos, "random_obj", i, filter) # i means the collision group that the actor belongs to. 3 means bitwise filter for elements in the same collisionGroup to mask off collision
+        self.obj_handle = self.gym.create_actor(env, self.obj_asset,self.obj_pos, f"random_obj_{i}", i, filter) # i means the collision group that the actor belongs to. 3 means bitwise filter for elements in the same collisionGroup to mask off collision
         # get global index of box in rigid body state tensor
         obj_idx = self.gym.get_actor_rigid_body_index(env, self.obj_handle, 0, gymapi.DOMAIN_SIM)
         self.obj_idxs.append(obj_idx)
@@ -271,14 +286,14 @@ class IsaacGymSim:
         if self.settings == 0:
             self.pos_action[:,1] = -up
         elif self.settings == 1:
-            self.pos_action[:,1] = -up/2
+            self.pos_action[:,1] = -up
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
 
     def move_gripper_down(self, down = 0.1):
         if self.settings == 0:
             self.pos_action[:,1] = -down
         elif self.settings == 1:
-            self.pos_action[:,1] = -down/2
+            self.pos_action[:,1] = -down
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
 
     def stop_gripper(self):
@@ -309,16 +324,22 @@ class IsaacGymSim:
             self.step_simulation(15)
             self.stop_gripper()
             self.step_simulation(15)
-
+            self.move_gripper_up()
+            self.step_simulation(15)
+            self.move_gripper_down()
+            self.step_simulation(15)
+            self.stop_gripper()
+            self.step_simulation(15)
+            
     def rotate_gripper(self, angle = np.pi/2):
         self.pos_action[:,0] = angle
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
 
     def y_rotate(self, angle =2* np.pi):
-        _ss = 20
+        _ss = 100
         if self.settings == 1:
-            _ss = 20
-            angle /= 2
+            _ss = 100
+            angle /= 1
         self.rotate_gripper(angle/2)
         self.step_simulation(_ss)
         self.rotate_gripper(-angle/2)
@@ -337,15 +358,13 @@ class IsaacGymSim:
         self.y_rotate()
         self.step_simulation(50)
 
-    def close_gripper_effort(self, effort = -100):
-        for _ in range(200):
-            self.effort_action[:,2] = effort
-            self.effort_action[:,3] = effort
-            self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.effort_action))
-            self.step_simulation(1)
-        self.effort_action[:,2] = 0
-        self.effort_action[:,3] = 0
+    def close_gripper_effort(self, effort = -200): # used to be -2 -200
+        self.detect_collision = False
+        self.effort_action[:,2] = effort
+        self.effort_action[:,3] = effort
         self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.effort_action))
+        self.step_simulation(400)
+
 
     def close_gripper(self):
         self.detect_collision = False
@@ -362,7 +381,14 @@ class IsaacGymSim:
         self.step_simulation(200)
 
     def move_gripper_to_grasp(self):
-        self.pos_action[:,1] = 0
+        safe_distance = 0.09 #0.095 22 0.09 23 0.085 21 0.08 21 0.075 18 before 13
+        print(type(self.grasps_distances))
+        if not isinstance(self.grasps_distances,type(None)):
+            for grasp_id in range(self.pos_action.shape[0]):
+                self.pos_action[grasp_id,1] = self.grasps_distances[grasp_id] - safe_distance 
+        else:
+            self.pos_action[:,1] = 0
+        # print(self.pos_action)
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.pos_action))
         self.step_simulation(200)
 
@@ -392,11 +418,11 @@ class IsaacGymSim:
             self.gym.fetch_results(self.sim, True)
             
             # refresh tensors
+            # self.gym.refresh_net_contact_force_tensor(self.sim)
             self.gym.refresh_rigid_body_state_tensor(self.sim)
             self.gym.refresh_dof_state_tensor(self.sim)
             self.gym.refresh_actor_root_state_tensor(self.sim)
-            self.gym.refresh_net_contact_force_tensor(self.sim)
-            self.detect_collision_during_approaching()
+            
 
             # update viewer
             if self.headless == False:
@@ -416,20 +442,17 @@ class IsaacGymSim:
             self.dof_pos = self.dof_states[:, 0].view(self.num_envs, -1, 1)
             self.dof_vel = self.dof_states[:, 1].view(self.num_envs, -1, 1)
 
+            self.detect_collision_during_approaching()
+
     def set_obj_asset_options(self):
-        print(f'ARGS Settings: {self.args.settings}')
+        # print(f'ARGS Settings: {self.args.settings}')
         if self.settings == 0: # box, cylinder
             obj_asset_options = gymapi.AssetOptions()
             obj_asset_options.disable_gravity = True
             obj_asset_options.mesh_normal_mode = gymapi.COMPUTE_PER_VERTEX
             obj_asset_options.vhacd_enabled = False
-            # obj_asset_options.convex_decomposition_from_submeshes = True
-            # obj_asset_options.vhacd_params = gymapi.VhacdParams()
-            # obj_asset_options.vhacd_params.resolution = 1000000
-            # obj_asset_options.convex_decomposition_from_submeshes = True
             obj_asset_options.override_com = True
             obj_asset_options.override_inertia = True
-            # obj_asset_options.use_mesh_materials = True
             self.obj_asset_options = obj_asset_options
             return obj_asset_options
         elif self.settings == 1:
@@ -437,13 +460,10 @@ class IsaacGymSim:
             obj_asset_options.disable_gravity = True
             obj_asset_options.mesh_normal_mode = gymapi.COMPUTE_PER_VERTEX
             obj_asset_options.vhacd_enabled = True
-            # obj_asset_options.convex_decomposition_from_submeshes = True
             obj_asset_options.vhacd_params = gymapi.VhacdParams()
             obj_asset_options.vhacd_params.resolution = 1000000
-            # obj_asset_options.convex_decomposition_from_submeshes = True
             obj_asset_options.override_com = True
             obj_asset_options.override_inertia = True
-            # obj_asset_options.use_mesh_materials = True
             self.obj_asset_options = obj_asset_options
             return obj_asset_options
 

@@ -22,9 +22,9 @@ if __name__ == "__main__":
     # initialize global variables
     data_path = 'grasp_data_generated'
     save_path = 'grasp_data_generated'
-    path_to_assets = 'assets/grasp_data/' # object mesh and json path
+    path_to_assets = '../grasper/grasp_data/' # object mesh and json path
 
-    MAX_ENVS = 10000
+    MAX_ENVS = 20000
     headless = True
     trial = utils.args.trial
     cat = utils.args.cat #'mug'
@@ -33,7 +33,7 @@ if __name__ == "__main__":
     obj_name = f'{cat}{idx:03}'
     
 
-    Path(f"{data_path}/{cat}/{obj_name}_isaac/").mkdir(parents=True, exist_ok=True)
+    Path(f"{data_path}/{cat}/{obj_name}_isaac").mkdir(parents=True, exist_ok=True)
     
 
     path_to_obj_mesh = f'{path_to_assets}/meshes/{cat}/{obj_name}.stl'
@@ -43,11 +43,19 @@ if __name__ == "__main__":
     
 
     # get initial run
-    fname = f'{data_path}/{cat}/{obj_name}/main{trial}.npz'
+    if utils.args.even == 0:
+        fname = f'{data_path}/{cat}/{obj_name}/main{trial}.npz'
+        main_save_name = f'{data_path}/{cat}/{obj_name}_isaac/main{trial}.npz'
+    elif utils.args.even == 1:
+        fname = f'{data_path}/{cat}/{obj_name}/main{trial}_even_grasps.npz'
+        main_save_name = f'{data_path}/{cat}/{obj_name}_isaac/main{trial}_even_grasps.npz'
+
     quaternions, translations, obj_pose_relative, is_promising = utils.load_grasp_data(fname)
+    # print(is_promising)
     indices = np.argwhere(is_promising == 1)
     indices = indices.squeeze()
     if len(indices) == 0:
+        print("no promising grasps")
         exit(1)
     print(f"getting labels for {obj_name}")
 
@@ -65,16 +73,20 @@ if __name__ == "__main__":
         print('No positive grasps')
         current_chunk = -1
 
-    np.savez_compressed(f'{data_path}/{cat}/{obj_name}_isaac/main{trial}.npz',
+    np.savez_compressed(main_save_name,
                         quaternions=quaternions,
                         translations=translations,
                         isaac_labels = isaac_labels)
     del quaternions, translations
 
+    if utils.args.even == 1:
+        exit()
+
     # gather the data
     quaternions, translations, is_promising = [], [], []
     for _ind in indices:
-        _quaternions, _translations, obj_pose_relative, _is_promising = utils.load_grasp_data(fname)
+        fname2 = f'{data_path}/{cat}/{obj_name}/main{trial}_{_ind:08}.npz'
+        _quaternions, _translations, obj_pose_relative, _is_promising = utils.load_grasp_data(fname2)
         quaternions.append(_quaternions)
         translations.append(_translations)
         is_promising.append(_is_promising)
@@ -98,7 +110,7 @@ if __name__ == "__main__":
                 isaac_labels,
                 obj_pose_relative,
                 current_chunk]
-    with open(f'{data_path}/{cat}/{obj_name}_isaac/all_info.pkl', 'wb') as f:
+    with open(f'{data_path}/{cat}/{obj_name}_isaac/all_info_{trial}.pkl', 'wb') as f:
         pickle.dump(all_info, f)
 
     exit()

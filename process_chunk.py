@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
     data_path = 'grasp_data_generated'
     save_path = 'grasp_data_generated'
-    path_to_assets = 'assets/grasp_data/' # object mesh and json path
+    path_to_assets = '../grasper/grasp_data/' # object mesh and json path
     
     headless = True
     trial = utils.args.trial
@@ -38,7 +38,7 @@ if __name__ == "__main__":
   
 
 
-    with open(f'{data_path}/{cat}/{obj_name}_isaac/all_info.pkl', 'rb') as f:
+    with open(f'{data_path}/{cat}/{obj_name}_isaac/all_info_{trial}.pkl', 'rb') as f:
         all_info = pickle.load(f)
     [quaternions,translations,promising_indices, splitted_indices,isaac_labels,obj_pose_relative,current_chunk] = all_info
     
@@ -61,7 +61,7 @@ if __name__ == "__main__":
                 isaac_labels,
                 obj_pose_relative,
                 current_chunk]
-    with open(f'{data_path}/{cat}/{obj_name}_isaac/all_info.pkl', 'wb') as f:
+    with open(f'{data_path}/{cat}/{obj_name}_isaac/all_info_{trial}.pkl', 'wb') as f:
         pickle.dump(all_info, f)
 
     if len(splitted_indices) == current_chunk:
