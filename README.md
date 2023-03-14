@@ -1,5 +1,5 @@
 # IsaacGymGrasp
-IsaacGymGrasp runs a robot grasping physics simulator that can visualize, execute, and evaluate numerous robot grasps in simultaneous environments.
+IsaacGymGrasp runs a robot grasping physics simulator that can visualize, execute, and evaluate numerous robot grasps in simultaneous environments. The project [GraspFlow](https://github.com/tasbolat1/graspflow) used this simulation to label a grasping dataset and evaluate model performance.
 
 Below is an example of how IsaacGymGrasp evaluates the quality of grasps.
 
